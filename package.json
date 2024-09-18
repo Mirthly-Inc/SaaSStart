@@ -1,0 +1,28 @@
+{
+  "name": "saasstart",
+  "version": "1.0.1",
+  "description": "Create your Saas within minutes!.",
+  "main": "bin/index.js",
+  "type": "module",
+  "bin": {
+    "create-your-saas": "./bin/index.js"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "create-app",
+    "nextjs",
+    "firebase",
+    "mailgun",
+    "stripe"
+  ],
+  "author": "mirthly.products@gmail.com",
+  "license": "MIT",
+  "dependencies": {
+    "chalk": "^5.0.0",
+    "fs-extra": "^10.0.0",
+    "execa": "^6.0.0",
+    "prompts": "^2.4.2"
+  }
+}
