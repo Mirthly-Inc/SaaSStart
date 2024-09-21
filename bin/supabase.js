@@ -1073,19 +1073,17 @@ async function configureStripe(projectdir) {
 }
 
 function getStripeWebhookContent() {
-  return `
-  import Stripe from "stripe";
+  return `import Stripe from "stripe";
 import { stripe } from "@/lib/stripe";
-import { updateUserPurchaseStatus } from "@/lib/auth";
 import { NextRequest, NextResponse } from "next/server";
-import sendPurchaseConfirmationEmail from "@/lib/mailgun";
+import { createClient } from "@/utils/supabase/server";
 
 export async function POST(request: NextRequest) {
+  console.log("Webhook received");
   try {
     const rawBody = await request.text();
     const signature = request.headers.get("stripe-signature");
 
-    //verify the signature of Webhook to prevent to prevent unwanted data manipulations
     let event;
     try {
       event = stripe.webhooks.constructEvent(
@@ -1102,14 +1100,28 @@ export async function POST(request: NextRequest) {
     if (event.type === "checkout.session.completed") {
       const session: Stripe.Checkout.Session = event.data.object;
       const userId = session.metadata?.userId;
+      const customerEmail = session.customer_email;
 
-      // Create or update the stripe_customer_id in the stripe_customers table
-      await updateUserPurchaseStatus(userId!, true);
+      if (userId) {
+        // Update user's hasPurchased status in Supabase
+        const supabase = createClient();
+        const { error } = await supabase
+          .from('users')
+          .update({ hasPurchased: true })
+          .eq('userid', userId);
 
-      //send email via Mailgun
-      await sendPurchaseConfirmationEmail(session);
+        if (error) {
+          console.error('Error updating user purchase status:', error);
+          // You might want to handle this error, perhaps by sending a notification
+        } else {
+          console.log(\`Updated purchase status for user \${userId}\`);
+          // Optionally, you can add more logic here, like sending a confirmation email
+        }
+      } else {
+        console.error('User ID not found in session metadata');
+      }
     }
-    //always return "success" to webhook
+
     return NextResponse.json({ message: "success" });
   } catch (error: any) {
     console.log(error.message);
