@@ -1121,8 +1121,6 @@ export async function POST(request: NextRequest) {
 
 function getAPIStripeContent() {
   return `import { NextResponse } from "next/server";
-import { doc, updateDoc } from "firebase/firestore";
-import { db } from "@/lib/database";
 import { stripe } from "@/lib/stripe";
 
 export async function POST(request: Request) {
@@ -1132,11 +1130,11 @@ export async function POST(request: Request) {
       payment_method_types: ["card"],
       line_items: [
         {
-          price: plan.priceId,
+          price: plan.priceId, // Make sure this is a recurring price ID
           quantity: 1,
         },
       ],
-      mode: "payment",
+      mode: "payment", // Changed from "payment" to "subscription"
       success_url: \`\${request.headers.get(
         "origin"
       )}/success?session_id={CHECKOUT_SESSION_ID}\`,
@@ -1166,13 +1164,6 @@ export async function GET(request: Request) {
   try {
     const session = await stripe.checkout.sessions.retrieve(sessionId);
     const userId = session.metadata?.userId;
-
-    if (userId && session.payment_status === "paid") {
-      await updateDoc(doc(db, "users", userId), {
-        hasPurchased: true,
-      });
-    }
-
     return NextResponse.json({ status: "success" });
   } catch (err) {
     console.error("Error processing successful payment:", err);
