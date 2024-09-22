@@ -1156,11 +1156,11 @@ export async function POST(request: Request) {
       payment_method_types: ["card"],
       line_items: [
         {
-          price: plan.priceId, // Make sure this is a recurring price ID
+          price: plan.priceId, // This should be a recurring price ID
           quantity: 1,
         },
       ],
-      mode: "payment", // Changed from "payment" to "subscription"
+      mode: "subscription",
       success_url: \`\${request.headers.get(
         "origin"
       )}/success?session_id={CHECKOUT_SESSION_ID}\`,
@@ -1189,7 +1189,6 @@ export async function GET(request: Request) {
 
   try {
     const session = await stripe.checkout.sessions.retrieve(sessionId);
-    const userId = session.metadata?.userId;
     return NextResponse.json({ status: "success" });
   } catch (err) {
     console.error("Error processing successful payment:", err);
