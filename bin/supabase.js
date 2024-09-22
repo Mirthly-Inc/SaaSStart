@@ -457,43 +457,63 @@ export default function Testimonials() {
 
 function getPricing() {
   return `"use client";
-import { auth, db } from "@/lib/database";
 import { useState, useEffect } from "react";
-import { signInWithGoogle } from "@/lib/auth";
+import { User } from "@supabase/supabase-js";
 import { Verified } from "../assests/verified";
 import { loadStripe } from "@stripe/stripe-js";
-import { doc, getDoc } from "firebase/firestore";
 import { details } from "../constants/Constants";
-import { onAuthStateChanged } from "firebase/auth";
+import { createClient } from "@/utils/supabase/client";
 
 export default function Pricing() {
   const [loading, setLoading] = useState(false);
-  const [user, setUser] = useState(null);
+  const [user, setUser] = useState<User | null>(null);
   const [hasPurchased, setHasPurchased] = useState(false);
+  const supabase = createClient();
 
-  //check whether user has already purchased or not
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
-      //@ts-ignore
-      setUser(currentUser);
-      if (currentUser) {
-        const docRef = doc(db, "users", currentUser.uid);
-        const docSnap = await getDoc(docRef);
-        if (docSnap.exists()) {
-          setHasPurchased(docSnap.data().hasPurchased);
+    const fetchUserAndPurchaseStatus = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      setUser(user);
+
+      if (user) {
+        const { data, error } = await supabase
+          .from('users')
+          .select('plan_active, plan_expires')
+          .eq('userid', user.id)
+          .single();
+        if (error) {
+          console.error('Error fetching purchase status:', error);
+        } else {
+          if (data?.plan_expires < Date.now()) {
+            setHasPurchased(false);
+            const { error: updateError } = await supabase
+              .from('users')
+              .update({ plan_active: false })
+              .eq('userid', user.id);
+            if (updateError) {
+              console.error('Error updating plan_active:', updateError);
+            }
+          } else {
+            setHasPurchased(data?.plan_active || false);
+          }
         }
       }
-    });
+    };
 
-    return () => unsubscribe();
-  }, []);
+    fetchUserAndPurchaseStatus();
+  }, [supabase]);
 
   //handle checkout -- POST -> /api/stripe
   const handleCheckout = async (plan: (typeof details.plans)[0]) => {
     if (!user) {
-      await signInWithGoogle();
-      return;
-    }
+      await supabase.auth.signInWithOAuth({
+       provider: "google",
+       options: {
+         redirectTo: \`http://localhost:3000/auth/callback\`,
+       },
+     });
+     return;
+   }
 
     if (hasPurchased) {
       alert("You have already purchased a plan.");
@@ -501,6 +521,7 @@ export default function Pricing() {
     }
 
     setLoading(true);
+
     try {
       const response = await fetch("/api/stripe", {
         method: "POST",
@@ -509,7 +530,7 @@ export default function Pricing() {
           "Content-Type": "application/json",
         },
         //@ts-ignore
-        body: JSON.stringify({ plan, userId: user?.uid }),
+        body: JSON.stringify({ plan, userId: user?.id }),
       });
 
       const stripePromise = loadStripe(
