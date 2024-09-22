@@ -651,68 +651,61 @@ export default function Pricing() {
 
 function getNavbar() {
   return `"use client";
-import { useState, useEffect } from "react";
-import { User } from "firebase/auth";
-import { auth } from "../../lib/database";
-import { signOut, signInWithGoogle } from "../../lib/auth";
+import { useEffect, useState } from 'react';
+import { User } from '@supabase/supabase-js';
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { details } from "../constants/Constants";
+import { createClient } from "@/utils/supabase/client";
 
 export default function Navbar() {
   const [user, setUser] = useState<User | null>(null);
-  const router = useRouter();
+  const supabase = createClient();
 
-  //check status fo auth
   useEffect(() => {
-    const unsubscribe = auth.onAuthStateChanged(setUser);
-    return () => unsubscribe();
-  }, []);
+    const getUser = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      setUser(user);
+    };
+    getUser();
+  }, [supabase]);
 
   const handleSignIn = async () => {
-    try {
-      await signInWithGoogle();
-      // No need to redirect, as the auth state change will trigger a re-render
-    } catch (error) {
-      console.error("Error signing in", error);
-    }
+    await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: {
+        redirectTo: \`http://localhost:3000/auth/callback\`,
+      },
+    });
   };
 
   const handleSignOut = async () => {
-    try {
-      await signOut();
-      // No need to redirect, as the auth state change will trigger a re-render
-    } catch (error) {
-      console.error("Error signing out", error);
-    }
+    await supabase.auth.signOut();
+    setUser(null);
   };
 
   return (
     <nav className="text-white p-4">
       <div className="max-w-7xl mx-auto flex justify-between items-center">
         <Link href="/" className="text-2xl font-bold">
-          \`\${details.app.title}\`
+          Your Startup Name
         </Link>
         <div className="flex items-center space-x-4">
           {user ? (
             <>
-              <span className="text-sm">
-                Welcome, {user.displayName || user.email}
-              </span>
+              <span className="text-sm text-gray-700">{user.email}</span>
               <button
+                className="bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-4 rounded"
                 onClick={handleSignOut}
-                className="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-md text-sm transition duration-300 ease-in-out"
               >
-                Sign Out
+                Sign out
               </button>
             </>
           ) : (
             <button
-              onClick={handleSignIn}
-              className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-md text-sm transition duration-300 ease-in-out"
-            >
-              Sign In with Google
-            </button>
+                className="bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-4 rounded"
+                onClick={handleSignIn}
+              >
+                Login in with Google
+              </button>
           )}
         </div>
       </div>
