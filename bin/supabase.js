@@ -1106,34 +1106,80 @@ export async function POST(request: NextRequest) {
         process.env.STRIPE_WEBHOOK_SECRET!
       );
     } catch (error: any) {
-      console.error(\`Webhook signature verification failed: \${error.message}\`);
+      console.error(\`Webhook signature verification failed: ${error.message}\`);
       return NextResponse.json({ message: "Webhook Error" }, { status: 400 });
     }
+    console.log(event.type);
 
-    // Handle checkout.session.completed event
-    if (event.type === "checkout.session.completed") {
-      const session: Stripe.Checkout.Session = event.data.object;
-      const userId = session.metadata?.userId;
-      const customerEmail = session.customer_email;
-
-      if (userId) {
-        // Update user's hasPurchased status in Supabase
-        const supabase = createClient();
-        const { error } = await supabase
-          .from('users')
-          .update({ hasPurchased: true })
-          .eq('userid', userId);
-
-        if (error) {
-          console.error('Error updating user purchase status:', error);
-          // You might want to handle this error, perhaps by sending a notification
-        } else {
-          console.log(\`Updated purchase status for user \${userId}\`);
-          // Optionally, you can add more logic here, like sending a confirmation email
+    const supabase = createClient();
+    switch (event.type) {
+      case "checkout.session.completed":
+        const session: Stripe.Checkout.Session = event.data.object;
+        const userId = session.metadata?.userId;
+        console.log(session);
+        if (userId) {
+          const { error } = await supabase
+            .from("users")
+            .update({
+              plan_active: true,
+              stripe_customer_id: session.customer,
+              subscription_id: session.id,
+              plan_expires: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+            })
+            .eq("userid", userId);
+          if (error) {
+            console.error("Error updating user subscription status:", error);
+          } else {
+            console.log(\`Updated subscription status for user \${userId}\`);
+          }
         }
-      } else {
-        console.error('User ID not found in session metadata');
-      }
+        break;
+
+      case "customer.subscription.updated":
+        console.log("Reached update");
+        const subscription: Stripe.Subscription = event.data.object;
+        const userId_to_update = subscription.metadata?.userId;
+        if (userId_to_update) {
+          const { data, error } = await supabase
+            .from("users")
+            .upsert({
+              plan_active: true,
+              stripe_customer_id: subscription.customer,
+              subscription_id: subscription.id,
+              //need to fix the date problem
+              // plan_expires: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+            })
+            .eq("userid", userId_to_update);
+          console.log(data);
+          if (error) {
+            console.error("Error updating user subscription status:", error);
+          } else {
+            console.log(\`Updated subscription status for user \${userId}\`);
+          }
+        }
+        break;
+
+      case "customer.subscription.deleted":
+        const deletedSubscription: Stripe.Subscription = event.data.object;
+        const deletedUserId = deletedSubscription.metadata?.userId;
+        if (deletedUserId) {
+          const { error } = await supabase
+            .from("users")
+            .update({
+              plan_active: false,
+              stripe_customer_id: "canceled",
+              subscription_id: null,
+              plan_expires: null,
+            })
+            .eq("userid", deletedUserId);
+
+          if (error) {
+            console.error("Error updating user subscription status:", error);
+          } else {
+            console.log(\`Subscription canceled for user \${deletedUserId}\`);
+          }
+        }
+        break;
     }
 
     return NextResponse.json({ message: "success" });
