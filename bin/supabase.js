@@ -9,7 +9,7 @@ import prompts from "prompts";
 async function firebase_generate() {
   console.log("-----Welcome to SaaSStart-----");
   console.log(
-    "---->You are using default setup : Next.js(TS), Firebase, Mailgun, Stripe"
+    "---->You are using Supabase setup : Next.js(TS), Supabase, Mailgun, Stripe"
   );
   try {
     let projectName;
@@ -50,7 +50,12 @@ async function firebase_generate() {
       process.exit(1);
     }
     console.log("Installing additional dependencies...");
-    const dependencies = ["firebase", "stripe", "mailgun.js"];
+    const dependencies = [
+      "@supabase/supabase-js",
+      "@supabase/ssr",
+      "stripe",
+      "mailgun.js",
+    ];
     try {
       await execaCommand(`npm install ${dependencies.join(" ")}`);
       await execaCommand("npm install @stripe/stripe-js");
@@ -73,7 +78,7 @@ async function firebase_generate() {
   }
 }
 
-//Add the verified file <SVG> verified file
+//Check the project name
 async function validateProjectName(name) {
   // Check if name is empty
   if (!name.trim()) {
@@ -363,6 +368,61 @@ async function configureComponents(projectdir) {
     path.join(componentsDir, "Availableservices.tsx"),
     Availableservices
   );
+
+  const PortalButton = getPortalButton();
+  await fs.writeFile(
+    path.join(componentsDir, "PortalButton.tsx"),
+    PortalButton
+  );
+
+  const portalDir = path.join(projectdir, "app", "portal");
+  await fs.ensureDir(portalDir);
+}
+
+function getPortalButton() {
+  return `"use client";
+
+import { createPortalSession } from "../portal/portalActions";
+import { createClient } from "../../utils/supabase/client";
+
+export default function PortalButton() {
+  const supabase = createClient();
+  const handleClick = async () => {
+    try {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      if (!user) {
+        throw "Please log in to manage your billing.";
+      }
+
+      const { data: customer } = await supabase
+        .from("users")
+        .select("stripe_customer_id")
+        .eq("userid", user.id)
+        .single();
+
+      const { url } = await createPortalSession(customer?.stripe_customer_id);
+
+      window.location.href = url;
+    } catch (error) {
+      console.error(error);
+    }
+  };
+
+  return (
+    <>
+      <button
+        className="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded"
+        onClick={handleClick}
+      >
+        Manage Billing
+      </button>
+    </>
+  );
+}
+`;
 }
 
 function getVideoDemo() {
@@ -421,18 +481,18 @@ export default function Testimonials() {
   return (
     <div className="py-12 bg-black overflow-hidden rounded-xl my-12">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <h2 className="text-3xl font-extrabold text-white text-center mb-8">
+        <h2 className="text-2xl sm:text-3xl font-extrabold text-white text-center mb-8">
           What Our Users Say
         </h2>
         <div className="relative">
-          <div className="testimonial-scroll flex animate-scroll">
+          <div className="testimonial-scroll flex flex-nowrap overflow-x-auto sm:overflow-x-hidden animate-scroll">
             {[...details.testimonials, ...details.testimonials].map(
               (testimonial, index) => (
                 <div
                   key={\`\${testimonial.id}-\${index}\`}
-                  className="bg-gradient-to-br from-neutral-900 via-neutral-800 to-neutral-700 rounded-lg shadow-md p-6 w-80 flex-shrink-0 mx-4 transition-all duration-300 hover:scale-105"
+                  className="bg-gradient-to-br from-neutral-900 via-neutral-800 to-neutral-700 rounded-xl shadow-md p-6 w-72 sm:w-80 flex-shrink-0 mx-2 sm:mx-4 transition-all duration-300 hover:scale-105"
                 >
-                  <p className="mb-4 text-gray-300">"{testimonial.content}"</p>
+                  <p className="mb-4 text-gray-300">{testimonial.content}</p>
                   <div className="flex items-center">
                     <div>
                       <p className="text-sm font-medium text-white">
@@ -472,31 +532,37 @@ export default function Pricing() {
 
   useEffect(() => {
     const fetchUserAndPurchaseStatus = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
       setUser(user);
 
       if (user) {
         const { data, error } = await supabase
-          .from('users')
-          .select('plan_active, plan_expires')
-          .eq('userid', user.id)
+          .from("users")
+          .select("plan_active, plan_expires")
+          .eq("userid", user.id)
           .single();
-        if (error) {
-          console.error('Error fetching purchase status:', error);
-        } else {
-          if (data?.plan_expires < Date.now()) {
-            setHasPurchased(false);
-            const { error: updateError } = await supabase
-              .from('users')
-              .update({ plan_active: false })
-              .eq('userid', user.id);
-            if (updateError) {
-              console.error('Error updating plan_active:', updateError);
-            }
-          } else {
-            setHasPurchased(data?.plan_active || false);
+        if (error) throw error;
+
+        if (!data) return false;
+        const expirationDate = new Date(data.plan_expires);
+        const isExpired = expirationDate < new Date();
+
+        if (isExpired && data.plan_active) {
+          // Update plan_active to false if expired
+          const { error: updateError } = await supabase
+            .from("users")
+            .update({ plan_active: false })
+            .eq("userid", user.id);
+
+          if (updateError) {
+            console.error("Error updating plan_active:", updateError);
           }
+          setHasPurchased(false);
+          return false;
         }
+        setHasPurchased(data.plan_active);
       }
     };
 
@@ -507,13 +573,13 @@ export default function Pricing() {
   const handleCheckout = async (plan: (typeof details.plans)[0]) => {
     if (!user) {
       await supabase.auth.signInWithOAuth({
-       provider: "google",
-       options: {
-         redirectTo: \`http://localhost:3000/auth/callback\`,
-       },
-     });
-     return;
-   }
+        provider: "google",
+        options: {
+          redirectTo: \`http://localhost:3000/auth/callback\`,
+        },
+      });
+      return;
+    }
 
     if (hasPurchased) {
       alert("You have already purchased a plan.");
@@ -529,7 +595,6 @@ export default function Pricing() {
           Accept: "application/json",
           "Content-Type": "application/json",
         },
-        //@ts-ignore
         body: JSON.stringify({ plan, userId: user?.id }),
       });
 
@@ -558,18 +623,18 @@ export default function Pricing() {
     <div className="bg-gradient-to-b from-[#1a1a1a] to-black py-16 rounded-xl my-12">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="text-center">
-          <h2 className="text-3xl font-extrabold text-white sm:text-4xl">
+          <h2 className="text-2xl sm:text-3xl font-extrabold text-white sm:text-4xl">
             Choose Your Plan
           </h2>
-          <p className="mt-4 text-xl text-gray-300">
+          <p className="mt-4 text-lg sm:text-xl text-gray-300">
             Select the perfect plan for your project needs
           </p>
         </div>
-        <div className="mt-16 flex justify-center space-x-8">
+        <div className="mt-16 flex flex-col lg:flex-row items-center justify-center gap-10">
           {details.plans.map((plan, index) => (
             <div
               key={index}
-              className={\`flex flex-col rounded-lg shadow-lg overflow-hidden w-full max-w-md \${
+              className={\`flex flex-col shadow-lg rounded-xl overflow-hidden w-full max-w-md mb-8 lg:mb-0 \${
                 plan.highlighted
                   ? "border-2 border-blue-500 transform scale-105"
                   : "border border-gray-700"
@@ -617,11 +682,11 @@ export default function Pricing() {
                     </li>
                   ))}
                 </ul>
-                <div className="rounded-md shadow">
+                <div className="shadow">
                   <button
                     onClick={() => handleCheckout(plan)}
                     disabled={loading || hasPurchased}
-                    className={\`w-full flex items-center justify-center px-5 py-3 border border-transparent text-base font-medium rounded-md text-white \${
+                    className={\`w-full flex items-center justify-center px-5 py-3 border border-transparent text-base font-medium rounded-xl text-white \${
                       plan.highlighted
                         ? "bg-blue-500 hover:bg-blue-600"
                         : "bg-gray-700 hover:bg-gray-600"
@@ -651,18 +716,22 @@ export default function Pricing() {
 
 function getNavbar() {
   return `"use client";
-import { useEffect, useState } from 'react';
-import { User } from '@supabase/supabase-js';
+import { useEffect, useState } from "react";
+import { User } from "@supabase/supabase-js";
 import Link from "next/link";
 import { createClient } from "@/utils/supabase/client";
+import PortalButton from "./Portalbutton";
 
 export default function Navbar() {
   const [user, setUser] = useState<User | null>(null);
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
   const supabase = createClient();
 
   useEffect(() => {
     const getUser = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
       setUser(user);
     };
     getUser();
@@ -682,33 +751,53 @@ export default function Navbar() {
     setUser(null);
   };
 
+  const toggleMenu = () => {
+    setIsMenuOpen(!isMenuOpen);
+  };
+
   return (
-    <nav className="text-white p-4">
+    <nav className="text-white p-4 relative">
       <div className="max-w-7xl mx-auto flex justify-between items-center">
         <Link href="/" className="text-2xl font-bold">
           Your Startup Name
         </Link>
-        <div className="flex items-center space-x-4">
-          {user ? (
-            <>
-              <span className="text-sm text-gray-700">{user.email}</span>
+        <div className="sm:hidden">
+          <button onClick={toggleMenu} className="text-white focus:outline-none">
+            <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={isMenuOpen ? "M6 18L18 6M6 6l12 12" : "M4 6h16M4 12h16M4 18h16"} />
+            </svg>
+          </button>
+        </div>
+        <div className={\`fixed top-0 right-0 bottom-0 w-64 bg-neutral-800 z-50 h-fit  transform transition-transform duration-300 ease-in-out w-[100%] pt-4 \${isMenuOpen ? 'translate-x-0' : 'translate-x-full'} sm:relative sm:transform-none sm:flex sm:w-auto sm:bg-transparent sm:space-x-4\`}>
+          <div className="flex flex-col h-full justify-center gap-4 items-center space-y-4 sm:flex-row sm:space-y-0">
+            {user ? (
+              <>
+                <span className="text-sm text-gray-300">{user.email}</span>
+                <PortalButton />
+                <button
+                  className="bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-4 rounded w-full sm:w-auto"
+                  onClick={handleSignOut}
+                >
+                  Sign out
+                </button>
+              </>
+            ) : (
               <button
-                className="bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-4 rounded"
-                onClick={handleSignOut}
-              >
-                Sign out
-              </button>
-            </>
-          ) : (
-            <button
-                className="bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-4 rounded"
+                className="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded w-full sm:w-auto"
                 onClick={handleSignIn}
               >
-                Login in with Google
+                Login with Google
               </button>
-          )}
+            )}
+          </div>
         </div>
       </div>
+      {isMenuOpen && (
+        <div 
+          className="fixed inset-0 bg-black opacity-50 z-40 sm:hidden" 
+          onClick={toggleMenu}
+        ></div>
+      )}
     </nav>
   );
 }
@@ -716,24 +805,21 @@ export default function Navbar() {
 }
 
 function getHome() {
-  return `
-  import Availableservices from "./Availableservices";
-import Navbar from "./Navbar";
+  return `import Navbar from "./Navbar";
 import Pricing from "./Pricing";
 import Testimonials from "./Testimonials";
 import VideoDemo from "./VideoDemo";
-import { details } from "../constants/Constants";
 
 export default function Home() {
   return (
-    <div className="min-h-screen w-[80%] mx-auto">
+    <div className="min-h-screen w-full px-4 sm:px-6 lg:px-8 lg:w-[80%] mx-auto">
       <Navbar />
-      <div className="text-center text-4xl font-bold py-10">
-        \`\${details.app.slogan}\`
+      <div className="text-center text-2xl sm:text-3xl md:text-4xl font-bold py-6 sm:py-10">
+        Ship your apps at 10X speed
       </div>
+      <div className="text-center text-lg sm:text-xl mb-6">Your Complete Next.js Saas Boilerplate</div>
       <Testimonials />
       <VideoDemo />
-      <Availableservices />
       <Pricing />
     </div>
   );
@@ -900,7 +986,7 @@ function getConstantsContent() {
   app: {
     title: "Your App Name",
     description: "Your app description",
-    slogan:"Your app slogan",
+    slogan:"Your app slogan here",
     demo: {
       role: "Role",
       name: "Your name",
@@ -917,31 +1003,32 @@ function getConstantsContent() {
       name: "Alice Johnson",
       role: "Software Developer",
       content:
-        "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Integer faucibus enim vitae nulla mollis",
+        "Alter has revolutionized our development process. It's incredibly easy to use and saves us so much time!",
     },
     {
       id: 2,
       name: "Bob Smith",
       role: "Project Manager",
       content:
-        "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Integer faucibus enim vitae nulla mollis.",
+        "I can't imagine managing our projects without Alter. It's a game-changer for our team's productivity.",
     },
     {
       id: 3,
       name: "Carol Davis",
       role: "Startup Founder",
       content:
-        "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Integer faucibus enim vitae nulla mollis.",
+        "Alter helped us launch our MVP in record time. The authentication and billing integrations are seamless.",
     },
     {
       id: 4,
       name: "Daryl Dixon",
       role: "Startup Founder",
       content:
-        "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Integer faucibus enim vitae nulla mollis.",
+        "The best part about Alter is that it is so easy to use. I can build my app in a fraction of the time it would take me to do it manually.",
     },
   ],
   plans: [
+    //plan 1 and 2 are one time payment, Plan 3 is subscription base. 
     {
       name: "Basic Plan",
       price: "$100",
@@ -975,6 +1062,23 @@ function getConstantsContent() {
       ],
       buttonText: "Upgrade Now",
       highlighted: true,
+    },
+    {
+      name: "Subscription Plan",
+      price: "$10",
+      priceId: "price_1Q1k4lJ0UEKhTVBjFc0JePxN", // Replace with actual Stripe Price ID
+      description: "Perfect for small projects",
+      features: [
+        { name: "Feature 1", included: true },
+        { name: "Feature 2", included: true },
+        { name: "Feature 3", included: true },
+        { name: "Feature 4", included: true },
+        { name: "Feature 5", included: false },
+        { name: "Feature 6", included: false },
+        { name: "Feature 7", included: false },
+      ],
+      buttonText: "Get Started",
+      highlighted: false,
     },
   ],
   socialLinks: [
@@ -1053,11 +1157,131 @@ async function configureDatabaseAndAuth(projectdir) {
   const authContent = getAuthContent();
   await fs.writeFile(path.join(libdir, "auth.ts"), authContent);
 
-  //api auth
-  const apiAuthDir = path.join(projectdir, "app", "api", "auth");
-  await fs.ensureDir(apiAuthDir);
-  const apiAuthContent = getapiAuthContent();
-  await fs.writeFile(path.join(apiAuthDir, "route.ts"), apiAuthContent);
+  //add supabase specific code
+  const utilsdir = path.join(projectdir, "utils", "supabase");
+  await fs.ensureDir(utilsdir);
+
+  const clientContent = getClientContent();
+  await fs.writeFile(path.join(utilsdir, "client.ts"), clientContent);
+
+  const middlewareContent = getmiddlewareContent();
+  await fs.writeFile(path.join(utilsdir, "middleware.ts"), middlewareContent);
+
+  const serverContent = getserverContent();
+  await fs.writeFile(path.join(utilsdir, "client.ts"), serverContent);
+}
+
+function getserverContent() {
+  return `import { createServerClient } from "@supabase/ssr";
+import { cookies } from "next/headers";
+
+export function createClient() {
+  const cookieStore = cookies();
+
+  return createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        getAll() {
+          return cookieStore.getAll();
+        },
+        setAll(cookiesToSet) {
+          try {
+            cookiesToSet.forEach(({ name, value, options }) =>
+              cookieStore.set(name, value, options)
+            );
+          } catch {
+            // The \`setAll\` method was called from a Server Component.
+            // This can be ignored if you have middleware refreshing
+            // user sessions.
+          }
+        },
+      },
+    }
+  );
+}
+`;
+}
+
+function getmiddlewareContent() {
+  return `import { createServerClient } from '@supabase/ssr'
+import { NextResponse, type NextRequest } from 'next/server'
+
+export async function updateSession(request: NextRequest) {
+  let supabaseResponse = NextResponse.next({
+    request,
+  })
+
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        getAll() {
+          return request.cookies.getAll()
+        },
+        setAll(cookiesToSet) {
+          cookiesToSet.forEach(({ name, value, options }) => request.cookies.set(name, value))
+          supabaseResponse = NextResponse.next({
+            request,
+          })
+          cookiesToSet.forEach(({ name, value, options }) =>
+            supabaseResponse.cookies.set(name, value, options)
+          )
+        },
+      },
+    }
+  )
+
+  // IMPORTANT: Avoid writing any logic between createServerClient and
+  // supabase.auth.getUser(). A simple mistake could make it very hard to debug
+  // issues with users being randomly logged out.
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+
+  if (
+    !user &&
+    !request.nextUrl.pathname.startsWith('/login') &&
+    !request.nextUrl.pathname.startsWith('/auth')
+  ) {
+    // no user, potentially respond by redirecting the user to the login page
+    const url = request.nextUrl.clone()
+    url.pathname = '/login'
+    return NextResponse.redirect(url)
+  }
+
+  // IMPORTANT: You *must* return the supabaseResponse object as it is. If you're
+  // creating a new response object with NextResponse.next() make sure to:
+  // 1. Pass the request in it, like so:
+  //    const myNewResponse = NextResponse.next({ request })
+  // 2. Copy over the cookies, like so:
+  //    myNewResponse.cookies.setAll(supabaseResponse.cookies.getAll())
+  // 3. Change the myNewResponse object to fit your needs, but avoid changing
+  //    the cookies!
+  // 4. Finally:
+  //    return myNewResponse
+  // If this is not done, you may be causing the browser and server to go out
+  // of sync and terminate the user's session prematurely!
+
+  return supabaseResponse
+}`;
+}
+
+function getClientContent() {
+  return `"use client";
+
+import { createBrowserClient } from "@supabase/ssr";
+
+export function createClient() {
+  return createBrowserClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  );
+}
+`;
 }
 
 async function configureStripe(projectdir) {
@@ -1093,7 +1317,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/utils/supabase/server";
 
 export async function POST(request: NextRequest) {
-  console.log("Webhook received");
   try {
     const rawBody = await request.text();
     const signature = request.headers.get("stripe-signature");
@@ -1105,18 +1328,17 @@ export async function POST(request: NextRequest) {
         signature!,
         process.env.STRIPE_WEBHOOK_SECRET!
       );
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (error: any) {
-      console.error(\`Webhook signature verification failed: ${error.message}\`);
+      console.error(\`Webhook signature verification failed: \${error.message}\`);
       return NextResponse.json({ message: "Webhook Error" }, { status: 400 });
     }
-    console.log(event.type);
 
     const supabase = createClient();
     switch (event.type) {
       case "checkout.session.completed":
         const session: Stripe.Checkout.Session = event.data.object;
         const userId = session.metadata?.userId;
-        console.log(session);
         if (userId) {
           const { error } = await supabase
             .from("users")
@@ -1124,39 +1346,19 @@ export async function POST(request: NextRequest) {
               plan_active: true,
               stripe_customer_id: session.customer,
               subscription_id: session.id,
-              plan_expires: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+              plan_expires: new Date(
+                Date.now() + 30 * 24 * 60 * 60 * 1000
+              ).toISOString(),
             })
             .eq("userid", userId);
           if (error) {
             console.error("Error updating user subscription status:", error);
-          } else {
-            console.log(\`Updated subscription status for user \${userId}\`);
           }
         }
         break;
 
       case "customer.subscription.updated":
-        console.log("Reached update");
-        const subscription: Stripe.Subscription = event.data.object;
-        const userId_to_update = subscription.metadata?.userId;
-        if (userId_to_update) {
-          const { data, error } = await supabase
-            .from("users")
-            .upsert({
-              plan_active: true,
-              stripe_customer_id: subscription.customer,
-              subscription_id: subscription.id,
-              //need to fix the date problem
-              // plan_expires: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-            })
-            .eq("userid", userId_to_update);
-          console.log(data);
-          if (error) {
-            console.error("Error updating user subscription status:", error);
-          } else {
-            console.log(\`Updated subscription status for user \${userId}\`);
-          }
-        }
+        //no need to update the user subscription status
         break;
 
       case "customer.subscription.deleted":
@@ -1175,20 +1377,17 @@ export async function POST(request: NextRequest) {
 
           if (error) {
             console.error("Error updating user subscription status:", error);
-          } else {
-            console.log(\`Subscription canceled for user \${deletedUserId}\`);
           }
         }
         break;
     }
 
     return NextResponse.json({ message: "success" });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
   } catch (error: any) {
-    console.log(error.message);
     return NextResponse.json({ message: error.message }, { status: 500 });
   }
-}
-  `;
+}`;
 }
 
 function getAPIStripeContent() {
@@ -1206,6 +1405,7 @@ export async function POST(request: Request) {
           quantity: 1,
         },
       ],
+      //change mode to "payment" to accept one-time-payment
       mode: "subscription",
       success_url: \`\${request.headers.get(
         "origin"
@@ -1234,7 +1434,7 @@ export async function GET(request: Request) {
   }
 
   try {
-    const session = await stripe.checkout.sessions.retrieve(sessionId);
+    await stripe.checkout.sessions.retrieve(sessionId);
     return NextResponse.json({ status: "success" });
   } catch (err) {
     console.error("Error processing successful payment:", err);
@@ -1247,113 +1447,46 @@ export async function GET(request: Request) {
 `;
 }
 
-function getapiAuthContent() {
-  return `
-    import { NextApiRequest, NextApiResponse } from "next";
-import { signInWithGoogle } from "../../../lib/auth";
-
-export default async function handler(
-  req: NextApiRequest,
-  res: NextApiResponse
-) {
-  if (req.method === "POST") {
-    try {
-      //google auth sign-in with firebase
-      //Enable google auth provider in firebase project
-      const user = await signInWithGoogle();
-      res.status(200).json({ user });
-    } catch (error: unknown) {
-      if (error instanceof Error) {
-        res.status(400).json({ error: error.message });
-      } else {
-        res.status(400).json({ error: "An unknown error occurred" });
-      }
-    }
-  } else {
-    res.status(405).json({ error: "Method not allowed" });
-  }
-}
-`;
-}
-
 function getDatabaseContent() {
-  return `
-import { initializeApp } from 'firebase/app';
-import { getFirestore } from 'firebase/firestore';
-import { getAuth } from 'firebase/auth';
+  return `import { createServerClient } from '@supabase/ssr'
+import { cookies } from 'next/headers'
 
-const firebaseConfig = {
-  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
-  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
-  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
-  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
-  appId: process.env.FIREBASE_APP_ID,
-};
+export function createClient() {
+  const cookieStore = cookies()
 
-export const app = initializeApp(firebaseConfig);
-export const db = getFirestore(app);
-export const auth = getAuth(app);
-`;
+  return createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        get(name: string) {
+          return cookieStore.get(name)?.value
+        },
+      },
+    }
+  )
+}
+export const supabase = createClient()`;
 }
 
 function getAuthContent() {
-  return `
-    import {
-  signOut as firebaseSignOut,
-  User,
-  signInWithPopup,
-  GoogleAuthProvider,
-} from "firebase/auth";
-import { auth, db } from "../lib/database";
-import { doc, setDoc, getDoc } from "firebase/firestore";
+  return `import { createClient } from "../utils/supabase/server";
 
-//sign-in with google
-//Enable google as provider in firebase console
-export async function signInWithGoogle() {
-  const provider = new GoogleAuthProvider();
-  try {
-    const result = await signInWithPopup(auth, provider);
-    await createOrUpdateUserDocument(result.user);
-    return result.user;
-  } catch (error: any) {
-    if (error.code === "auth/popup-closed-by-user") {
-      console.log(
-        "Sign-in popup was closed by the user before finalizing the operation."
-      );
-      return null;
-    }
-    console.error("Error during sign-in:", error);
-  }
-}
-
-//create a record of user in firebase after sign-in to track his purchase
-async function createOrUpdateUserDocument(user: User): Promise<void> {
-  const userRef = doc(db, "users", user.uid);
-  const userSnap = await getDoc(userRef);
-  if (!userSnap.exists()) {
-    await setDoc(userRef, {
-      uid: user.uid,
-      email: user.email,
-      hasPurchased: false,
-    });
-  }
-}
-
-//handle SignOut
-export async function signOut(): Promise<void> {
-  await firebaseSignOut(auth);
-}
-
-// New function to update user's purchase status
+// Update user's purchase status
 export async function updateUserPurchaseStatus(
   uid: string,
   hasPurchased: boolean
 ): Promise<void> {
-  const userRef = doc(db, "users", uid);
-  await setDoc(userRef, { hasPurchased }, { merge: true });
-}
-`;
+  const supabase = createClient();
+  const { error } = await supabase
+    .from('users')
+    .update({ hasPurchased: hasPurchased })
+    .eq('id', uid);
+
+  if (error) {
+    console.error("Error updating user purchase status:", error);
+  }
+}`;
 }
 
 function getStripeContent() {
