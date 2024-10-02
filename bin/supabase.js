@@ -341,6 +341,15 @@ async function configureComponents(projectdir) {
   const Footer = getFooter();
   await fs.writeFile(path.join(componentsDir, "Footer.tsx"), Footer);
 
+  const authcallbackdir = path.join(projectdir, "app", "callback");
+  await fs.ensureDir(authcallbackdir);
+
+  const authcallbackContent = getauthcallbackContent();
+  await fs.writeFile(
+    path.join(authcallbackdir, "route.ts"),
+    authcallbackContent
+  );
+
   const Home = getHome();
   await fs.writeFile(path.join(componentsDir, "Home.tsx"), Home);
 
@@ -373,12 +382,43 @@ async function configureComponents(projectdir) {
 
   const portalDir = path.join(projectdir, "app", "portal");
   await fs.ensureDir(portalDir);
+
+  const portalAction = getportalAction();
+  await fs.writeFile(path.join(portalDir, "portalAction.ts"), portalAction);
+}
+
+function getportalAction() {
+  return `"use server";
+
+import { stripe } from "../../lib/stripe";
+import { headers } from "next/headers";
+
+export async function createPortalSession(customerId: string) {
+  // Get the host from the request headers
+  const headersList = headers();
+  const host = headersList.get("host") || "";
+
+  // Determine the protocol (http or https)
+  // In production, you typically want to always use https
+  const protocol = process.env.NODE_ENV === "production" ? "http" : "http";
+
+  // Construct the full URL
+  const baseUrl = \`\${protocol}://\${host}\`;
+
+  const portalSession = await stripe.billingPortal.sessions.create({
+    customer: customerId,
+    return_url: baseUrl,
+  });
+
+  return { id: portalSession.id, url: portalSession.url };
+}
+`;
 }
 
 function getPortalButton() {
   return `"use client";
 
-import { createPortalSession } from "../portal/portalActions";
+import { createPortalSession } from "../portal/portalAction";
 import { createClient } from "../../utils/supabase/client";
 
 export default function PortalButton() {
@@ -568,10 +608,17 @@ export default function Pricing() {
   //handle checkout -- POST -> /api/stripe
   const handleCheckout = async (plan: (typeof details.plans)[0]) => {
     if (!user) {
+      // Get the current origin (protocol + hostname + port)
+      const origin =
+        typeof window !== "undefined" ? window.location.origin : "";
+
+      // Construct the callback URL
+      const redirectUrl = \`\${origin}/auth/callback\`;
+
       await supabase.auth.signInWithOAuth({
         provider: "google",
         options: {
-          redirectTo: \`http://localhost:3000/auth/callback\`,
+          redirectTo: redirectUrl,
         },
       });
       return;
@@ -734,10 +781,16 @@ export default function Navbar() {
   }, [supabase]);
 
   const handleSignIn = async () => {
+    // Get the current origin (protocol + hostname + port)
+    const origin = typeof window !== "undefined" ? window.location.origin : "";
+
+    // Construct the callback URL
+    const redirectUrl = \`\${origin}/auth/callback\`;
+
     await supabase.auth.signInWithOAuth({
       provider: "google",
       options: {
-        redirectTo: \`http://localhost:3000/auth/callback\`,
+        redirectTo: redirectUrl,
       },
     });
   };
@@ -1164,7 +1217,60 @@ async function configureDatabaseAndAuth(projectdir) {
   await fs.writeFile(path.join(utilsdir, "middleware.ts"), middlewareContent);
 
   const serverContent = getserverContent();
-  await fs.writeFile(path.join(utilsdir, "client.ts"), serverContent);
+  await fs.writeFile(path.join(utilsdir, "server.ts"), serverContent);
+}
+
+function getauthcallbackContent() {
+  return `import { NextResponse } from "next/server";
+import { createClient } from "../../../utils/supabase/server";
+
+export async function GET(request: Request) {
+  const { searchParams, origin } = new URL(request.url);
+  const code = searchParams.get("code");
+
+  if (code) {
+    const supabase = createClient();
+    const { data, error } = await supabase.auth.exchangeCodeForSession(code);
+
+    if (!error && data.user) {
+      // Check if user already exists in the database
+      const { data: existingUser, error: fetchError } = await supabase
+        .from("users")
+        .select("userid")
+        .eq("userid", data.user.id)
+        .single();
+
+      if (fetchError && fetchError.code !== "PGRST116") {
+        console.error("Error checking existing user:", fetchError);
+        return NextResponse.redirect(\`\${origin}/auth/auth-code-error\`);
+      }
+
+      if (existingUser) {
+        // User already exists, redirect to home page
+        return NextResponse.redirect(\`\${origin}/\`);
+      } else {
+        // Add new user to the database
+        const { error: insertError } = await supabase.from("users").insert({
+          userid: data.user.id,
+          email: data.user.email,
+          plan_active: false,
+        });
+
+        if (insertError) {
+          console.error("Error inserting user:", insertError);
+          return NextResponse.redirect(\`\${origin}/auth/auth-code-error\`);
+        }
+
+        // New user added successfully, redirect to home page
+        return NextResponse.redirect(\`\${origin}/\`);
+      }
+    }
+  }
+
+  // If there's no code or an error occurred, redirect to an error page
+  return NextResponse.redirect(\`\${origin}/auth/auth-code-error\`);
+}
+`;
 }
 
 function getserverContent() {
