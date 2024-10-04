@@ -8,7 +8,9 @@ import prompts from "prompts";
 
 async function firebase_generate() {
   console.log("-----Welcome to SaaSStart-----");
-  console.log("---->You are using default setup : Next.js(TS), Firebase, Mailgun, Stripe");
+  console.log(
+    "---->You are using default setup : Next.js(TS), Firebase, Mailgun, Stripe"
+  );
   try {
     let projectName;
     const response = await prompts({
@@ -63,9 +65,8 @@ async function firebase_generate() {
 
     console.log(chalk.green("Project created successfully!"));
 
-    console.log(chalk.green("Run --> npm run dev"))
-    console.log(chalk.green("Add ENV variable"))
-
+    console.log(chalk.green("Run --> npm run dev"));
+    console.log(chalk.green("Add ENV variable"));
   } catch (error) {
     console.log(chalk.red("Cannot create Next App"), error);
     process.exit(1);
@@ -634,12 +635,10 @@ import { User } from "firebase/auth";
 import { auth } from "../../lib/database";
 import { signOut, signInWithGoogle } from "../../lib/auth";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { details } from "../constants/Constants";
 
 export default function Navbar() {
   const [user, setUser] = useState<User | null>(null);
-  const router = useRouter();
 
   //check status fo auth
   useEffect(() => {
@@ -669,7 +668,7 @@ export default function Navbar() {
     <nav className="text-white p-4">
       <div className="max-w-7xl mx-auto flex justify-between items-center">
         <Link href="/" className="text-2xl font-bold">
-          \`\${details.app.title}\`
+          {details.app.title}
         </Link>
         <div className="flex items-center space-x-4">
           {user ? (
