@@ -321,10 +321,12 @@ async function replaceInFile(fileToModify, replaceValue) {
 function getpageContent() {
   return `import Home from "./components/Home";
 import Footer from "./components/Footer";
+import Navbar from "./components/Navbar";
 
 export default function Page() {
   return (
     <>
+      <Navbar />
       <Home />
       <Footer />
     </>
@@ -419,10 +421,10 @@ import { details } from "../constants/Constants";
 
 export default function Testimonials() {
   return (
-    <div className="py-12 bg-black overflow-hidden rounded-xl my-12">
+    <div className="py-12 bg-black overflow-hidden rounded-xl mt-12">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <h2 className="text-3xl font-extrabold text-white text-center mb-8">
-          What Our Users Say
+          What Our Users Say About Us
         </h2>
         <div className="relative">
           <div className="testimonial-scroll flex animate-scroll">
@@ -430,15 +432,15 @@ export default function Testimonials() {
               (testimonial, index) => (
                 <div
                   key={\`\${testimonial.id}-\${index}\`}
-                  className="bg-gradient-to-br from-neutral-900 via-neutral-800 to-neutral-700 rounded-lg shadow-md p-6 w-80 flex-shrink-0 mx-4 transition-all duration-300 hover:scale-105"
+                  className="bg-neutral-900 rounded-lg shadow-md p-6 w-80 flex-shrink-0 mx-4 transition-all duration-300 hover:scale-105"
                 >
-                  <p className="mb-4 text-gray-300">"{testimonial.content}"</p>
+                  <p className="mb-4 text-white">{testimonial.content}</p>
                   <div className="flex items-center">
                     <div>
                       <p className="text-sm font-medium text-white">
                         {testimonial.name}
                       </p>
-                      <p className="text-sm text-gray-400">
+                      <p className="text-sm text-gray-100">
                         {testimonial.role}
                       </p>
                     </div>
@@ -700,25 +702,22 @@ export default function Navbar() {
 }
 
 function getHome() {
-  return `
-  import Availableservices from "./Availableservices";
-import Navbar from "./Navbar";
+  return `import Availableservices from "./Availableservices";
 import Pricing from "./Pricing";
 import Testimonials from "./Testimonials";
+import Landingpage from "./Landingpage1";
 import VideoDemo from "./VideoDemo";
-import { details } from "../constants/Constants";
 
 export default function Home() {
   return (
-    <div className="min-h-screen w-[80%] mx-auto">
-      <Navbar />
-      <div className="text-center text-4xl font-bold py-10">
-        \`\${details.app.slogan}\`
+    <div className="min-h-screen">
+      <div className="py-10">
+        <Landingpage />
+        <Testimonials />
+        <VideoDemo />
+        <Availableservices />
+        <Pricing />
       </div>
-      <Testimonials />
-      <VideoDemo />
-      <Availableservices />
-      <Pricing />
     </div>
   );
 }
@@ -780,9 +779,11 @@ export default function Footer() {
 
 function getAvailableservices() {
   return `export default function Availableservices() {
-    return(
-      <div className="text-4xl text-white">Mention Your available services</div>
-    )
+  return (
+    <div className="text-4xl text-white w-[50%] mx-auto text-center min-h-[550px] flex items-center justify-center">
+      What problem does your app solve or more about your app
+    </div>
+  );
 }
 `;
 }
