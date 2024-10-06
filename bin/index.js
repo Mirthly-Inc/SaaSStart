@@ -365,6 +365,28 @@ async function configureComponents(projectdir) {
     path.join(componentsDir, "Availableservices.tsx"),
     Availableservices
   );
+
+  const landingpage = getLandingpage();
+  await fs.writeFile(path.join(componentsDir, "Landingpage.tsx"), landingpage);
+}
+
+function getLandingpage() {
+  return `import { details } from "../constants/Constants";
+
+export default function Landingpage() {
+  return (
+    <div className="flex flex-col min-h-[550px] py-32 text-center gap-8">
+      <div className="w-[50%] mx-auto text-6xl leading-tight tracking-wide text-center font-bold font-sans bg-gradient-to-r from-[#fd5454ee] via-yellow-400 to-[#0cbeffef] text-transparent bg-clip-text">
+        {details.app.slogan}
+      </div>
+      <div className="w-[50%] text-center mx-auto text-lg">
+        The NextJS boilerplate with all you need to build your SaaS, AI tool, or
+        any other web app and make your first $ online fast.
+      </div>
+    </div>
+  );
+}
+`;
 }
 
 function getVideoDemo() {
@@ -705,7 +727,7 @@ function getHome() {
   return `import Availableservices from "./Availableservices";
 import Pricing from "./Pricing";
 import Testimonials from "./Testimonials";
-import Landingpage from "./Landingpage1";
+import Landingpage from "./Landingpage";
 import VideoDemo from "./VideoDemo";
 
 export default function Home() {
